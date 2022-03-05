@@ -147,5 +147,16 @@
         },
       ],
     }),
+    mounted() {
+      this.checkLoggedIn();
+    },
+    methods: {
+      checkLoggedIn() {
+        if (!this.$session.exists() || !this.$session.has("token") ) {
+          this.$router.push('/auth')
+        }
+      }
+    }
   }
 </script>
+
