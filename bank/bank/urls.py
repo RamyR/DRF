@@ -22,3 +22,7 @@ urlpatterns = [
     path('auth/', obtain_jwt_token),
     path('', include('loan.urls'))
 ]
+
+urlpatterns += [
+    path('api-auth/', include('rest_framework.urls'))
+]

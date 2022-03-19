@@ -1,6 +1,7 @@
 from calendar import month
 from django.shortcuts import render
 from django.contrib.auth.models import User
+from django.db.models import Sum
 from rest_framework import generics, mixins, permissions
 from rest_framework import status
 from rest_framework.response import Response
@@ -60,13 +61,15 @@ class ApplicationMixinView(mixins.RetrieveModelMixin, mixins.CreateModelMixin, m
         serializer = self.serializer_class(data=request.data)
 
         if serializer.is_valid():
-            serializer.save()
+            print(request.user)
+            
+            serializer.save(user=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         print(serializer.errors)
         return Response({'Bad Request': "Invalid Data..."}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class ApplicationUpdateView(generics.UpdateAPIView):
+class ApplicationUpdateView(generics.UpdateAPIView, generics.RetrieveAPIView):
     queryset = Application.objects.all()
     serializer_class = ApplicationUpdateSerializer
     permission_classes = (permissions.IsAuthenticated,)
@@ -75,12 +78,36 @@ class ApplicationUpdateView(generics.UpdateAPIView):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
 
+        if(not request.user.is_superuser):
+            return Response({"message": "Unauthorized User"}, status=status.HTTP_401_UNAUTHORIZED)
+
         if serializer.is_valid():
+            if(serializer.validated_data["status"] == 'AV'):
+                total_funds = Application.objects.filter(status='AV', loan_fund__type='FD').aggregate(Sum('amount'))["amount__sum"]
+                total_loans = Application.objects.filter(status='AV', loan_fund__type='LN').aggregate(Sum('amount'))["amount__sum"]
+
+
+                print(total_funds-total_loans)
+                if(serializer.validated_data["amount"] <= (total_funds-total_loans)):
+                    serializer.save()
+                    return Response({"message": "application updated successfully"}, status=status.HTTP_206_PARTIAL_CONTENT)
+                else:
+                    return Response({"message": "Sorry, No Sufficient Funds Available"}, status=status.HTTP_409_CONFLICT)
+
             serializer.save()
             return Response({"message": "application updated successfully"})
 
         else:
             return Response({"message": "failed", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request, *args, **kwargs): #HTTP -> get
+        pk = kwargs.get("pk")
+        if pk is not None:
+            return self.retrieve(request, *args, **kwargs)
+        
+        return Response({"message": "Bad Request"}, status=status.HTTP_400_BAD_REQUEST)
+
+        
 
 
 
@@ -109,15 +136,17 @@ class LoanFundMixinView(mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixi
         return self.list(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
+        if(not request.user.is_superuser):
+            return Response({"message": "Unauthorized User"}, status=status.HTTP_401_UNAUTHORIZED)
         return self.create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         # serializer.save(user=self.request.user)
         duration_number = serializer.validated_data.get('duration')
-        print(duration_number.total_seconds())
-        duration = relativedelta(months=+duration_number.total_seconds())
-        print(duration)
-        serializer.save(duration=duration)
+        # print(duration_number.total_seconds())
+        # duration = relativedelta(months=+duration_number.total_seconds())
+        print(serializer.validated_data)
+        serializer.save(duration=duration_number)
 
 class PaymentMixinView(mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.ListModelMixin, generics.GenericAPIView):
     queryset = Payment.objects.all()

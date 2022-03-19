@@ -4,15 +4,33 @@ from rest_framework import serializers
 from django.core.validators import MinValueValidator, MaxValueValidator
 from .models import LoanFund, Application, Payment
 from django.contrib.auth.models import User
-import datetime
+from datetime import datetime
+
+class ChoiceField(serializers.ChoiceField):
+
+    def to_representation(self, obj):
+        if obj == '' and self.allow_blank:
+            return obj
+        return self._choices[obj]
+
+    def to_internal_value(self, data):
+        # To support inserts with the value
+        if data == '' and self.allow_blank:
+            return ''
+
+        for key, val in self._choices.items():
+            if val == data:
+                return key
+        self.fail('invalid_choice', input=data)
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         exclude = ['password']
+        read_only_fields = ['last_login', 'date_joined','user_permissions']
 
 class LoanFundSerializer(serializers.ModelSerializer):
-    type=serializers.CharField(source='get_type_display')
+    type=serializers.ChoiceField(choices=LoanFund.TYPES_CHOICES)
     class Meta:
         model = LoanFund
         fields = '__all__'
@@ -63,6 +81,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Application
         fields = ['id', 'start_date', 'loan_fund', 'user', 'status', 'amount', 'loan_fund_details', 'payment_details']
+        read_only_fields = ['user']
     
     
 
